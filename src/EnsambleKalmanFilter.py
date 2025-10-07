@@ -1,5 +1,5 @@
 import numpy as np
-import scipy
+from scipy.linalg import ldl
 
 
 '''
@@ -27,7 +27,7 @@ def initCovMatrix(m):
 
 # Aplicar LDLt para convertir la matriz de covarianza en matriz raiz cuadrada
 def transformCovMatrix2sqrtMatrix(matrix):
-    l, d, _ = scipy.ldl(matrix, True) # Use the upper part
+    l, d, _ = ldl(matrix, True) # Use the upper part
     S = l.dot(np.sqrt(d))
     return S
 
@@ -41,7 +41,7 @@ def calcTransitionMatrix(sample, dt):
     A = np.eye(m)
     factorial = 1.0
 
-    for i in range(m):
+    for i in range(1,m-1):
         A = A @ (A * dt) # Calcular (A*dt)^i
         factorial *= i # Calcular i!
         F += A / factorial
@@ -105,12 +105,51 @@ def calcNextS(Q, S, F):
     nextS = U[:m, :]
     return nextS
     
+def Potter(x, S, y, H, R):
+    x0 = x.copy()
+    S0 = S.copy()
+    # print("x0: ", np.array(x0).shape)
+    # print("s0: ", np.array(S0).shape)
+    # print("y : ", y.shape)
+    # print("H : ", H.shape)
+    # print("R : ", R.shape)
+
+    for i in range(len(y)):
+        Hi = H[i, :].reshape(1,len(x))
+        yi = y[i]
+        Ri = R[i]
+
+        # phi = np.dot(S0.T, Hi.T)
+        phi = S0.T @ Hi.T
+        #ai = 1/((np.dot(phi.T, phi)) + Ri )
+        ai = 1/((phi.T @ phi) + Ri )
+        gammai = ai/(1 + np.sqrt(ai * Ri))
+        #S0 = S0 @ (np.eye(len(S)) - ai*gammai * np.dot(phi, phi.T))
+        S0 = S0 @ (np.eye(len(S)) - ai*gammai * (phi @ phi.T))
+        #Ki = np.dot(S0, phi)
+        Ki = S0 @ phi
+        #x0 = x0 + Ki*(yi - np.dot(Hi, x0))
+        x0 = x0 + (Ki[:,0]) * (yi - (Hi @ x0)) 
+        #print("updated_x0: ", np.array(x0).shape)
+
+    return x0, S0 
+
+def calcY(H, x, z):
+    return np.dot(H, x) + z
+
+def calcH(x, list_idx = [0,1]):
+    H = []
+    for idx in list_idx:
+        row = np.zeros((len(x)))
+        row[idx] = 1
+        H.append(row)
+    return np.array(H)
 
 def EnKL(matrix, sampleFreq):
     samples = len(matrix)
     m = len(matrix[0])
     P0 = initCovMatrix(m)
-    S0 = transformCovMatrix2sqrtMatrix(P0)
+    S = transformCovMatrix2sqrtMatrix(P0)
     dt = 1/sampleFreq
     xP = [matrix[0]]
 
@@ -120,6 +159,22 @@ def EnKL(matrix, sampleFreq):
         W = calcGaussError(m)
         F = calcTransitionMatrix(matrix[i], dt)
         new_xp = np.dot(F, xP[i-1]) + W
-        xP.append(new_xp)
 
         # Predecir siguiente matriz raiz cuadrada de procesos 
+        Q = initCovMatrix(len(W)) #toDo
+        S = calcNextS(Q, S, F)
+
+        # Calcular dato de entrada Y
+        H = calcH(matrix[i], list_idx=range(len(matrix[i])))
+        z = calcGaussError(len(H))
+        y = calcY(H, xP[i-1], z)
+
+        # Actualizar x y S 
+        R = initCovMatrix(len(z)) # Matriz de covarianza de errores
+        new_x, S = Potter(new_xp, S, y, H, R)
+        # print(np.array(new_x).shape)
+        # print(np.array(xP).shape)
+        # print(xP)
+        xP.append(new_x)
+
+    return np.array(xP)
