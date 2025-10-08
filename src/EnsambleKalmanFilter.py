@@ -22,9 +22,7 @@ from scipy.linalg import ldl
 
 # Crear Matriz de Covarianza inicial
 def initCovMatrix(m):
-    print(m)
     covMatrix = np.cov(m)
-    print("CovMatrix: ", covMatrix)
     return covMatrix
 
 # Aplicar LDLt para convertir la matriz de covarianza en matriz raiz cuadrada
@@ -52,11 +50,11 @@ def calcTransitionMatrix(sample, dt):
                 
 def calcNextS(Q, S, F):
     m = len(S)
-
+    #print(Q)
     Qsqrt = np.sqrt(Q)
     QT2 = Qsqrt.T
-
-    print(S.shape, F.shape)
+    
+    #print(S.shape, F.shape, QT2.shape)
 
     U = np.vstack([
         S.T @ F.T,     
@@ -129,32 +127,34 @@ def calcH(x, list_idx = [0,1]):
 
 def EnKL(matrix, sampleFreq):
     samples = len(matrix)
-    P0 = initCovMatrix(matrix[0])
-    m = len(matrix[0])
-    S = transformCovMatrix2sqrtMatrix(P0)
+    P0 = initCovMatrix(matrix.T)
+    S = transformCovMatrix2sqrtMatrix(P0)   # 14x14
     dt = 1/sampleFreq
-    xP = [matrix[0]]
+    xP = [matrix[0]] # 14,1
 
     # Iterar muestras
     for i in range(1, samples):
         # Predecir siguiente estado
-        W = calcGaussError(m)
-        F = calcTransitionMatrix(matrix[i], dt)
-        new_xp = np.dot(F, xP[i-1]) + W
-
+        W = calcGaussError((14,14)) # 14x14
+        F = calcTransitionMatrix(matrix[i], dt) # 14x14
+        new_xp = np.dot(F, xP[i-1]) + W # 14x14
+        
         # Predecir siguiente matriz raiz cuadrada de procesos 
-        Q = initCovMatrix(W) #toDo
-        S = calcNextS(Q, S, F)
+        Q = initCovMatrix(W)  # 14x14
+        S = calcNextS(Q, S, F)  # 14x14
 
         # Calcular dato de entrada Y
-        H = calcH(matrix[i], list_idx=range(len(matrix[i])))
-        z = calcGaussError(len(H))
-        y = calcY(H, xP[i-1], z)
+        H = calcH(matrix[i], list_idx=range(len(matrix[i])))  # 14x14
+        z = calcGaussError((14,14))  # 14x14
+        y = calcY(H, xP[i-1], z)  # 14x14
 
         # Actualizar x y S 
-        R = initCovMatrix(z) # Matriz de covarianza de errores
-        new_x, S = Potter(new_xp, S, y, H, R)
-        
-        xP.append(new_x)
+        R = initCovMatrix(z) # Matriz de covarianza de errores   14x14
+        new_x, S = Potter(new_xp, S, y, H, R)  # 14x14  # 14x14
 
-    return np.array(xP)
+        xP.append(new_x)
+    
+    shapes = set([np.array(x).shape for x in xP])
+    print("Formas detectadas:", shapes)
+
+    return np.array(xP, dtype=np.float32)
