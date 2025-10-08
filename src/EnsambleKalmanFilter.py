@@ -11,7 +11,7 @@ from scipy.linalg import ldl
     - Calcular matriz de transición "Series Taylor" -
 5. Predecir nueva matriz de covarianza "Rotación de Givens" (Funcion)
     - Calcular Q, matriz de covarianza del ruido Gaussiano W
-    - Calcular matriz de transición "Series Taylor"
+    - Calcular matriz de transición "Series Taylor" F
 6. Calcular el dato de entrada con la muestra real
     - Calcular H Matriz de transformación
     - Calcular Z error gaussiano 
@@ -22,7 +22,9 @@ from scipy.linalg import ldl
 
 # Crear Matriz de Covarianza inicial
 def initCovMatrix(m):
-    covMatrix = np.eye(m) * 0.01
+    print(m)
+    covMatrix = np.cov(m)
+    print("CovMatrix: ", covMatrix)
     return covMatrix
 
 # Aplicar LDLt para convertir la matriz de covarianza en matriz raiz cuadrada
@@ -47,26 +49,18 @@ def calcTransitionMatrix(sample, dt):
         F += A / factorial
 
     return F
-
-# Calcular Q matriz de covarianza del ruida Gaussiano W
-def calcGaussCovMatrix(noise_matrix):
-    m = len(noise_matrix)
-    Q = np.zeros((m,m))
-
-    for i in range(m):
-        for j in range(m):
-            if i == j:
-                # Calcula varianza 
-                pass
-    
-    return Q
                 
 def calcNextS(Q, S, F):
     m = len(S)
 
+    Qsqrt = np.sqrt(Q)
+    QT2 = Qsqrt.T
+
+    print(S.shape, F.shape)
+
     U = np.vstack([
         S.T @ F.T,     
-        np.linalg.cholesky(Q) #  DUDA: Como calcular Q T/2
+        QT2 
     ])
 
     # Iterar sobre columnas
@@ -108,30 +102,18 @@ def calcNextS(Q, S, F):
 def Potter(x, S, y, H, R):
     x0 = x.copy()
     S0 = S.copy()
-    # print("x0: ", np.array(x0).shape)
-    # print("s0: ", np.array(S0).shape)
-    # print("y : ", y.shape)
-    # print("H : ", H.shape)
-    # print("R : ", R.shape)
 
     for i in range(len(y)):
         Hi = H[i, :].reshape(1,len(x))
         yi = y[i]
         Ri = R[i]
 
-        # phi = np.dot(S0.T, Hi.T)
         phi = S0.T @ Hi.T
-        #ai = 1/((np.dot(phi.T, phi)) + Ri )
         ai = 1/((phi.T @ phi) + Ri )
         gammai = ai/(1 + np.sqrt(ai * Ri))
-        #S0 = S0 @ (np.eye(len(S)) - ai*gammai * np.dot(phi, phi.T))
         S0 = S0 @ (np.eye(len(S)) - ai*gammai * (phi @ phi.T))
-        #Ki = np.dot(S0, phi)
         Ki = S0 @ phi
-        #x0 = x0 + Ki*(yi - np.dot(Hi, x0))
         x0 = x0 + (Ki[:,0]) * (yi - (Hi @ x0)) 
-        #print("updated_x0: ", np.array(x0).shape)
-
     return x0, S0 
 
 def calcY(H, x, z):
@@ -147,8 +129,8 @@ def calcH(x, list_idx = [0,1]):
 
 def EnKL(matrix, sampleFreq):
     samples = len(matrix)
+    P0 = initCovMatrix(matrix[0])
     m = len(matrix[0])
-    P0 = initCovMatrix(m)
     S = transformCovMatrix2sqrtMatrix(P0)
     dt = 1/sampleFreq
     xP = [matrix[0]]
@@ -161,7 +143,7 @@ def EnKL(matrix, sampleFreq):
         new_xp = np.dot(F, xP[i-1]) + W
 
         # Predecir siguiente matriz raiz cuadrada de procesos 
-        Q = initCovMatrix(len(W)) #toDo
+        Q = initCovMatrix(W) #toDo
         S = calcNextS(Q, S, F)
 
         # Calcular dato de entrada Y
@@ -170,11 +152,9 @@ def EnKL(matrix, sampleFreq):
         y = calcY(H, xP[i-1], z)
 
         # Actualizar x y S 
-        R = initCovMatrix(len(z)) # Matriz de covarianza de errores
+        R = initCovMatrix(z) # Matriz de covarianza de errores
         new_x, S = Potter(new_xp, S, y, H, R)
-        # print(np.array(new_x).shape)
-        # print(np.array(xP).shape)
-        # print(xP)
+        
         xP.append(new_x)
 
     return np.array(xP)
