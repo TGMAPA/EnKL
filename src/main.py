@@ -11,12 +11,13 @@ print("Xp shape: ", xP.shape)
 
 
 col = 2
-limit = 3072
+limit = 5
 test_X1 = xP[:limit, 2]
-print(test_X1.shape)
+# print(test_X1.shape)
 
-print(test_X1)
+print("data2Graph: ", test_X1)
+
 plt.plot(test_X1)
-#plt.plot(matrix[:limit, 2])
+plt.plot(matrix[:limit, 2])
 plt.show()
 

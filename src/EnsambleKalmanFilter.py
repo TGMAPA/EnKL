@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from scipy.linalg import ldl
 
 
@@ -28,7 +29,9 @@ def initCovMatrix(m):
 # Aplicar LDLt para convertir la matriz de covarianza en matriz raiz cuadrada
 def transformCovMatrix2sqrtMatrix(matrix):
     l, d, _ = ldl(matrix, True) # Use the upper part
-    S = l.dot(np.sqrt(d))
+    D_sqrt = np.sqrt(np.clip(np.diag(d), 0, None))
+    S = l @ np.diag(D_sqrt)
+    #S = l.dot(np.sqrt(d))
     return S
 
 # Calcular error gaussiano 
@@ -36,21 +39,22 @@ def calcGaussError(m):
     return np.random.normal(size=m)
 
 def calcTransitionMatrix(sample, dt):
+    
     m = len(sample)
+    
     F = np.eye(m)
     A = np.eye(m)
-    factorial = 1.0
+    A_dt = A * dt
+    power = np.eye(m)
 
     for i in range(1,m-1):
-        A = A @ (A * dt) # Calcular (A*dt)^i
-        factorial *= i # Calcular i!
-        F += A / factorial
-
+        power = power @ A_dt
+        F += power / math.factorial(i)
     return F
-                
+
+
 def calcNextS(Q, S, F):
-    m = len(S)
-    #print(Q)
+    m = len(S)    
     Qsqrt = np.sqrt(Q)
     QT2 = Qsqrt.T
     
@@ -104,12 +108,13 @@ def Potter(x, S, y, H, R):
     for i in range(len(y)):
         Hi = H[i, :].reshape(1,len(x))
         yi = y[i]
-        Ri = R[i]
+        Ri = np.var(R[i])
 
-        phi = S0.T @ Hi.T
-        ai = 1/((phi.T @ phi) + Ri )
+        phi = np.dot(S0.T, Hi.T)
+        ai = (1/(np.dot(phi.T, phi) + Ri )).item() # scalar
+        # gammai = ai/(1 + np.sqrt(np.dot(ai, Ri)))
         gammai = ai/(1 + np.sqrt(ai * Ri))
-        S0 = S0 @ (np.eye(len(S)) - ai*gammai * (phi @ phi.T))
+        S0 = S0 @ (np.eye(len(x0)) - ai*gammai * (phi @ phi.T))
         Ki = S0 @ phi
         x0 = x0 + (Ki[:,0]) * (yi - (Hi @ x0)) 
     return x0, S0 
@@ -132,29 +137,35 @@ def EnKL(matrix, sampleFreq):
     dt = 1/sampleFreq
     xP = [matrix[0]] # 14,1
 
+    # Inicializar error
+    Q = calcGaussError((14,14))
+    Q = initCovMatrix(Q)        # 14x14
+    W = np.array([np.mean(row) for row in Q])
+
+    R = calcGaussError((14,14))
+    R = initCovMatrix(R)        # 14x14
+    z = np.array([np.mean(row) for row in R])
+
     # Iterar muestras
     for i in range(1, samples):
         # Predecir siguiente estado
-        W = calcGaussError((14,14)) # 14x14
         F = calcTransitionMatrix(matrix[i], dt) # 14x14
         new_xp = np.dot(F, xP[i-1]) + W # 14x14
         
         # Predecir siguiente matriz raiz cuadrada de procesos 
-        Q = initCovMatrix(W)  # 14x14
         S = calcNextS(Q, S, F)  # 14x14
 
         # Calcular dato de entrada Y
         H = calcH(matrix[i], list_idx=range(len(matrix[i])))  # 14x14
-        z = calcGaussError((14,14))  # 14x14
         y = calcY(H, xP[i-1], z)  # 14x14
 
         # Actualizar x y S 
-        R = initCovMatrix(z) # Matriz de covarianza de errores   14x14
         new_x, S = Potter(new_xp, S, y, H, R)  # 14x14  # 14x14
 
         xP.append(new_x)
     
+
     shapes = set([np.array(x).shape for x in xP])
     print("Formas detectadas:", shapes)
 
-    return np.array(xP, dtype=np.float32)
+    return np.array(xP, dtype=float)
